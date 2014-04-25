@@ -8,6 +8,7 @@
 {
     //------------------------------------------------------------------------------------------------------------------
     // A mini event emitter implementation from: https://github.com/jeromeetienne/microevent.js
+    // Copyright (c) 2011 Jerome Etienne, http://jetienne.com (See LICENSE file for MIT License.)
     //------------------------------------------------------------------------------------------------------------------
 
     var MicroEvent = function(){};
