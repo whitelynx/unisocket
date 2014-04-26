@@ -133,17 +133,18 @@
     UniSocketClient.connect = function(host)
     {
         var client = new UniSocketClient();
+        host = host || "";
 
         // Pull some parsing magic; we turn whatever the user gives us into an object with parameters `host`, `port`,
         // `channel`. This is the simplest way to parse the vast number of ways we support connecting.
         try
         {
             var re = /^(?:http:\/\/)?(\w+)?:?(\d+)?(\/[a-z|0-9|\/|-]+)?$/;
-            var params = JSON.parse(host.replace(re, "{\"host\":\"$1\",\"port\":$2,\"channel\":\"$3\"}"));
+            var params = JSON.parse(host.replace(re, "{\"host\":\"$1\",\"port\":\"$2\",\"channel\":\"$3\"}"));
         }
         catch(ex)
         {
-            console.error('Failed to connect, bad "host" parameter:', host);
+            console.error('Failed to connect, bad "host" parameter:', host, ex.stack());
 
             return client;
         } // end try/catch
