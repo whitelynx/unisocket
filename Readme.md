@@ -1,5 +1,7 @@
 # UniSocket
 
+[![Build Status](https://travis-ci.org/Morgul/unisocket.svg)](https://travis-ci.org/Morgul/unisocket)
+
 At it's heart, UniSocket is a simple wrapper around WebSockets. It's designed to handle the difficult part of using
 websockets; the over-the-wire protocol. It then adds some extremely useful features, such as the ability to reply to a
 message, or to namespace your connections. It consists of a lower-level event-based api, or a higher-level promise based
