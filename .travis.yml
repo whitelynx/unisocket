@@ -1,4 +1,7 @@
 language: node_js
 node_js:
   - 0.10
-script: './node_modules/karma/bin/karma start --single-run --browsers PhantomJS'
+before_install:
+  - "export DISPLAY=:99.0"
+  - "sh -e /etc/init.d/xvfb start"
+script: './node_modules/karma/bin/karma start --single-run --browsers Firefox'
