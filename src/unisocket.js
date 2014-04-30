@@ -41,6 +41,7 @@
 
         this.seqId = 0;
         this.waitingCallbacks = {};
+        this.options = {};
     } // end UniSocketClient
 
     // Inherit from MicroEvent
@@ -203,6 +204,7 @@
 
     UniSocketClient.prototype.emit = function(event)
     {
+        var self = this;
         var args = Array.prototype.slice.call(arguments);
 
         var data = args.slice(1);
@@ -219,7 +221,25 @@
         {
             message.replyWith = this._getSeqId();
             message.data.splice(message.data.length - 1, 1);
-            this.waitingCallbacks[message.replyWith] = maybeCallback;
+
+            // Set up timeout handler
+            var handle = setTimeout(function()
+            {
+                // Handle timeout
+                console.error("Timeout waiting for response.");
+                self._emit("timeout", message);
+            }, this.options.timeout || 30000);
+
+            // Store callback
+            this.waitingCallbacks[message.replyWith] = function()
+            {
+                // Cancel Timeout
+                clearTimeout(handle);
+
+                // Call callback
+                var args = Array.prototype.slice.call(arguments);
+                maybeCallback.apply(self, args);
+            };
         } // end if
 
         this.ws.send(JSON.stringify(message));

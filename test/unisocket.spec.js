@@ -8,7 +8,7 @@ function simulateConnect(socket)
 {
     socket.ws.onopen();
     socket.ws.onmessage({
-        data: '{"name":"connect","channel":"$control","replyTo":"1"}'
+        data: '{"name":"connect","channel":"$control","replyTo":"1","data":[{"timeout": 30000}]}'
     });
 } // end SimulateConnect
 
@@ -194,6 +194,18 @@ describe('UniSocket Client', function ()
         {
             socket.emit('test', "Some data.", function(){});
             assert(socket.ws.send.calledWith('{"name":"test","data":["Some data."],"replyWith":"2"}'));
+        });
+
+        it("triggers a timeout if a reply isn't sent within the configured timeout.", function(done)
+        {
+            // shorten the timeout interval
+            socket.options.timeout = 10;
+
+            socket.emit('test', function(){});
+            socket.on('timeout', function()
+            {
+                done();
+            });
         });
 
         it('callbacks passed as the last argument to `emit` get called with their replies', function(done)
