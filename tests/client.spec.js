@@ -114,6 +114,130 @@ describe('UniSocketClient', function()
                 }, 20);
             });
         });
+
+        it.skip('fires a \'timeout\' event if it fails to connect in time', function()
+        {
+            //TODO: Implement
+        });
+
+        it.skip('queues messages and requests while reconnecting', function()
+        {
+            //TODO: Implement
+        });
+
+        it.skip('throws away queued messages if close is called before it successfully reconnects', function()
+        {
+            //TODO: Implement
+        });
+    });
+
+    describe('Messages', function()
+    {
+        it('sends messages', function(done)
+        {
+            client.connect().then(function()
+            {
+                client.ws.on('send', function(message)
+                {
+                    assert.equal(message, "{\"name\":\"test\",\"data\":[]}");
+                    done()
+                });
+
+                client.send('test');
+            });
+        });
+
+        it('sends messages with data', function(done)
+        {
+            client.connect().then(function()
+            {
+                client.ws.on('send', function(message)
+                {
+                    assert.equal(message, "{\"name\":\"test\",\"data\":[{\"foo\":true},[{\"bar\":false}]]}");
+                    done()
+                });
+
+                client.send('test', {foo: true}, [{bar: false}]);
+            });
+        });
+
+        it('fires events for incoming messages', function(done)
+        {
+            client.connect().then(function()
+            {
+                client.on('test', function()
+                {
+                    done()
+                });
+
+                client.ws.emit('message', "{\"name\":\"test\",\"data\":[]}");
+            });
+        });
+
+        it('fires events with data for incoming messages', function(done)
+        {
+            client.connect().then(function()
+            {
+                client.on('test', function(arg1, arg2)
+                {
+                    assert.deepEqual(arg1, { foo: true });
+                    assert.deepEqual(arg2, [{ bar: false }]);
+                    done()
+                });
+
+                client.ws.emit('message', "{\"name\":\"test\",\"data\":[{\"foo\":true},[{\"bar\":false}]]}");
+            });
+        });
+    });
+
+    describe('Requests', function()
+    {
+        it('adds \'replyWith\' field', function(done)
+        {
+            client.connect().then(function()
+            {
+                client.ws.on('send', function(message)
+                {
+                    assert.deepEqual(JSON.parse(message), { name:"test", replyWith:"1", data:[] });
+                    done()
+                });
+
+                client.request('test');
+            });
+        });
+
+        it.skip('calls reply handlers when the reply comes in', function()
+        {
+            //TODO: Implement
+        });
+
+        it.skip('calls reply handlers with reply data', function()
+        {
+            //TODO: Implement
+        });
+
+        it.skip('triggers a timeout if a reply doesn\'t occur in the configured timeout window', function()
+        {
+            //TODO: Implement
+        });
+    });
+
+    describe('Channels', function()
+    {
+        it.skip('creates a new channel object', function()
+        {
+            //TODO: Implement
+        });
+
+        it.skip('sends on the correct channel', function()
+        {
+            //TODO: Implement
+        });
+
+        it.skip('fires events when messages come in on the channel', function()
+        {
+            //TODO: Implement
+        });
     });
 
 
@@ -121,7 +245,7 @@ describe('UniSocketClient', function()
 
     it('', function()
     {
-
+        //TODO: Implement
     });
 
     */
