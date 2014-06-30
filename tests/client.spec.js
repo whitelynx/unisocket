@@ -33,8 +33,6 @@ describe('UniSocketClient', function()
     beforeEach(function()
     {
         client = new UniSocketClient({ FakeSocket: FakeSocket });
-        client.on('connected', function() { console.log("CONNECTED!"); });
-        client.on('reconnected', function() { console.log("RECONNECTED!"); });
     });
 
     describe('Connection', function()
@@ -81,14 +79,8 @@ describe('UniSocketClient', function()
     {
         it('reconnects if connection was lost', function(done)
         {
-            client.on('disconnected', function()
-            {
-                console.log('DISCONNECTED@!!!!!!')
-            });
-
             client.on('reconnected', function()
             {
-                console.log('RECONNECTED@!!!!!!');
                 done();
             });
 
@@ -103,29 +95,25 @@ describe('UniSocketClient', function()
 
         it('doesn\'t reconnect if close was called', function(done)
         {
+            client.on('reconnected', function()
+            {
+                assert(false, "The 'reconnected' event was fired.");
+                done();
+            });
+
+            client.on('closed', function()
+            {
+                done();
+            });
+
             client.connect().then(function()
             {
                 setTimeout(function()
                 {
                     client.close();
                 }, 20);
-
-                client.on('reconnected', function()
-                {
-                    assert(false, "The 'reconnected' event was fired.");
-                    done();
-                });
-
-                client.on('close', function()
-                {
-                    setTimeout(function()
-                    {
-                        done();
-                    }, 20);
-                });
             });
         });
-
     });
 
 
