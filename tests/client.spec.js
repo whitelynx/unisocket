@@ -9,6 +9,7 @@ var EventEmitter = require("events").EventEmitter;
 var assert = require("assert");
 
 var UniSocketClient = require("../lib/client");
+var UniSocketChannel = require("../lib/channel");
 
 // ---------------------------------------------------------------------------------------------------------------------
 
@@ -206,32 +207,95 @@ describe('UniSocketClient', function()
             });
         });
 
-        it.skip('calls reply handlers when the reply comes in', function()
+        it('calls reply handlers when the reply comes in', function(done)
         {
-            //TODO: Implement
+            client.connect().then(function()
+            {
+                client.ws.on('send', function(message)
+                {
+                    assert.deepEqual(JSON.parse(message), { name:"test", replyWith:"1", data:[] });
+                    client.ws.emit('message', "{\"name\":\"test\",\"replyTo\":\"1\",\"data\":[]}");
+                });
+
+                client.request('test').then(function()
+                {
+                    done();
+                });
+            });
         });
 
-        it.skip('calls reply handlers with reply data', function()
+        it('calls reply handlers with reply data', function(done)
         {
-            //TODO: Implement
+            client.connect().then(function()
+            {
+                client.ws.on('send', function(message)
+                {
+                    assert.deepEqual(JSON.parse(message), { name:"test", replyWith:"1", data:[] });
+                    client.ws.emit('message', "{\"name\":\"test\",\"replyTo\":\"1\",\"data\":[{\"foo\":true},[{\"bar\":false}]]}");
+                });
+
+                client.request('test').spread(function(arg1, arg2)
+                {
+                    assert.deepEqual(arg1, { foo: true });
+                    assert.deepEqual(arg2, [{ bar: false }]);
+                    done();
+                });
+            });
         });
 
-        it.skip('triggers a timeout if a reply doesn\'t occur in the configured timeout window', function()
+        it('triggers a timeout if a reply doesn\'t occur in the configured timeout window', function(done)
         {
-            //TODO: Implement
+            client.options.timeout = 30;
+
+            client.on('timeout', function()
+            {
+                done()
+            });
+
+            client.connect().then(function()
+            {
+                client.request('test').error(function(){});
+            });
         });
     });
 
     describe('Channels', function()
     {
-        it.skip('creates a new channel object', function()
+        it('creates a new channel object', function(done)
         {
-            //TODO: Implement
+            client.connect().then(function()
+            {
+                client.channel('test').then(function(channel)
+                {
+                    assert(channel instanceof UniSocketChannel);
+                    done();
+                });
+            });
         });
 
-        it.skip('sends on the correct channel', function()
+        it('sends on the correct channel', function(done)
         {
-            //TODO: Implement
+            client.connect().then(function()
+            {
+                client.ws.on('send', function(message)
+                {
+                    var msgObj = JSON.parse(message);
+                    if(msgObj.channel == '$control')
+                    {
+                        client.ws.emit('message', "{\"name\":\"channel\",\"channel\":\"$control\",\"replyTo\":\"1\",\"data\":[]}")
+                    }
+                    else
+                    {
+                        assert.equal(message, "");
+                        done()
+                    } // end if
+                });
+
+                client.channel('test').then(function(channel)
+                {
+                    channel.send('test');
+                });
+            });
         });
 
         it.skip('fires events when messages come in on the channel', function()
@@ -239,17 +303,6 @@ describe('UniSocketClient', function()
             //TODO: Implement
         });
     });
-
-
-    /*
-
-    it('', function()
-    {
-        //TODO: Implement
-    });
-
-    */
-
 });
 
 // ---------------------------------------------------------------------------------------------------------------------
