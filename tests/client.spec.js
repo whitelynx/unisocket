@@ -13,11 +13,13 @@ var UniSocketChannel = require("../lib/channel");
 
 // ---------------------------------------------------------------------------------------------------------------------
 
-function FakeSocket()
+function FakeSocket(options)
 {
     var self = this;
     EventEmitter.call(this);
-    this.state = "OPENED";
+
+    this.autoHandle = options.autoHandle === undefined ? true : options.autoHandle;
+
     setTimeout(function()
     {
         this.emit('open');
@@ -28,7 +30,7 @@ function FakeSocket()
         message = JSON.parse(message);
 
         // Automatically handle $control messages
-        if(message.channel == '$control')
+        if(message.channel == '$control' && self.autoHandle)
         {
             switch(message.name)
             {
@@ -48,7 +50,7 @@ function FakeSocket()
 } // end FakeSocketServer
 util.inherits(FakeSocket, EventEmitter);
 FakeSocket.prototype.send = function(data){this.emit('send', data); };
-FakeSocket.prototype.close = function(){ this.state = 'CLOSED'; this.emit('close'); };
+FakeSocket.prototype.close = function(){ this.emit('close'); };
 
 // ---------------------------------------------------------------------------------------------------------------------
 
@@ -98,6 +100,21 @@ describe('UniSocketClient', function()
                 });
             });
         });
+
+        it('fires a \'timeout\' event if it fails to connect in time', function(done)
+        {
+            client.logger.silent = true;
+            client.options.connectTimeout = 30;
+            client.options.autoHandle = false;
+
+            client.connect().then(function()
+            {
+                assert(false, "Successfully connected.");
+            }).error(function()
+            {
+                done();
+            });
+        });
     }); // end describe#connect()
 
     describe('Reconnection', function()
@@ -138,11 +155,6 @@ describe('UniSocketClient', function()
                     client.close();
                 }, 20);
             });
-        });
-
-        it.skip('fires a \'timeout\' event if it fails to connect in time', function()
-        {
-            //TODO: Implement
         });
 
         it.skip('queues messages and requests while reconnecting', function()
