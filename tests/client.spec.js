@@ -299,9 +299,29 @@ describe('UniSocketClient', function()
             });
         });
 
-        it.skip('fires events when messages come in on the channel', function()
+        it('fires events when messages come in on the channel', function(done)
         {
-            //TODO: Implement
+            client.connect().then(function()
+            {
+                client.ws.on('send', function(message)
+                {
+                    var msgObj = JSON.parse(message);
+                    if(msgObj.channel == '$control')
+                    {
+                        client.ws.emit('message', "{\"name\":\"channel\",\"channel\":\"$control\",\"replyTo\":\"1\",\"data\":[]}")
+                    } // end if
+                });
+
+                client.channel('test').then(function(channel)
+                {
+                    channel.on('test', function()
+                    {
+                        done()
+                    });
+
+                    channel.ws.emit('message', "{\"name\":\"test\",\"channel\":\"test\",\"data\":[]}");
+                });
+            });
         });
     });
 });
