@@ -20,10 +20,13 @@ function FakeSocket(options)
 
     this.autoHandle = options.autoHandle === undefined ? true : options.autoHandle;
 
-    setTimeout(function()
+    if(this.autoHandle)
     {
-        this.emit('open');
-    }.bind(this), 10);
+        setTimeout(function()
+        {
+            this.emit('open');
+        }.bind(this), 10);
+    } // end if
 
     this.on('send', function(message)
     {
@@ -157,14 +160,48 @@ describe('UniSocketClient', function()
             });
         });
 
-        it.skip('queues messages and requests while reconnecting', function()
+        it('queues messages and requests while reconnecting', function(done)
         {
-            //TODO: Implement
+            client.connect().then(function()
+            {
+                client.on('reconnected', function()
+                {
+                    client.ws.on('send', function(message)
+                    {
+                        assert.equal(message, "{\"name\":\"test\",\"data\":[]}");
+                        done()
+                    });
+                });
+
+                setTimeout(function()
+                {
+                    client.ws.close();
+                    client.send('test');
+                    assert.equal(client.pendingMessages.length, 1);
+                }, 20);
+            });
         });
 
-        it.skip('throws away queued messages if close is called before it successfully reconnects', function()
+        it('throws away queued messages if close is called before it successfully reconnects', function(done)
         {
-            //TODO: Implement
+            client.once('closed', function()
+            {
+                assert.equal(client.pendingMessages.length, 0);
+                done();
+            });
+
+            client.connect().then(function()
+            {
+                setTimeout(function()
+                {
+                    client.options.autoHandle = false;
+                    client.ws.close();
+                    client.send('test');
+
+                    assert.equal(client.pendingMessages.length, 1);
+                    client.close();
+                }, 20);
+            });
         });
     });
 
