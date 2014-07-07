@@ -245,6 +245,7 @@ describe('UniSocketClient', function()
 
         it('triggers a timeout if a reply doesn\'t occur in the configured timeout window', function(done)
         {
+            client.logger.silent = true;
             client.options.timeout = 30;
 
             client.on('timeout', function()
@@ -286,7 +287,7 @@ describe('UniSocketClient', function()
                     }
                     else
                     {
-                        assert.equal(message, "");
+                        assert.equal(message, "{\"name\":\"test\",\"channel\":\"test\",\"data\":[]}");
                         done()
                     } // end if
                 });
