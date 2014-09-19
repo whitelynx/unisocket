@@ -276,6 +276,16 @@ socket.send('edit blog post');
 
 Personally, I find the last example the most readable, and encourage people to use UniSocket like that.
 
+## Building
+
+Since this is a browserify project, there _is_ a build step. Simply run the following command:
+
+```bash
+$ grunt build
+```
+
+That will output a `unisocket.min.js` file in the `dist` folder.
+
 ## Tests
 
 Unit tests are run using `npm test`. This project requires karma (which itself requires node.js). To get setup for
