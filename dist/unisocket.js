@@ -5,58 +5,19 @@
 // @module index.js
 //----------------------------------------------------------------------------------------------------------------------
 
+var _ = require('lodash');
+
 var Promise = require('./lib/promise');
 var UniSocketClient = require('./lib/client');
-
-//----------------------------------------------------------------------------------------------------------------------
-
-function UniSocketClientPromise(client)
-{
-    this._client = client;
-    for(var key in UniSocketClient.prototype)
-    {
-        if(typeof client[key] == 'function')
-        {
-            this[key] = client[key].bind(client);
-        }
-        else
-        {
-            this[key] = client[key];
-        } // end if
-    } // end for
-} // end UniSocketClientPromise
-
-UniSocketClientPromise.prototype.then = function()
-{
-    return this._client.connectPromise
-        .then.apply(this._client.connectPromise, arguments);
-}; // end then
 
 //----------------------------------------------------------------------------------------------------------------------
 
 module.exports = {
     connect: function(url, options)
     {
-        var callback = arguments[arguments.length - 1];
-        if(typeof callback != 'function')
-        {
-            callback = undefined;
-        }
-        else
-        {
-            switch(arguments.length)
-            {
-                case 2:
-                    options = undefined;
-                    break;
-                case 1:
-                    url = undefined;
-            } // end switch
-        } // end if
-
-        return new UniSocketClientPromise(new UniSocketClient(options))
-            .connect(url)
-            .nodeify(callback);
+        var client = new UniSocketClient(options)
+        var clientPromise =  client.connect(url);
+        return _.assign(clientPromise, _.bindAll(client));
     },
     defaultErrorHandler: function(errorHandler)
     {
@@ -64,8 +25,14 @@ module.exports = {
     }
 }; // end exports
 
+if(typeof window !== 'undefined')
+{
+    window.unisocket = module.exports;
+} // end if
+
 //----------------------------------------------------------------------------------------------------------------------
-},{"./lib/client":3,"./lib/promise":5}],2:[function(require,module,exports){
+
+},{"./lib/client":3,"./lib/promise":5,"lodash":47}],2:[function(require,module,exports){
 //----------------------------------------------------------------------------------------------------------------------
 // Represents a channel.
 //
@@ -75,7 +42,10 @@ module.exports = {
 var util = require("util");
 var EventEmitter = require("events").EventEmitter;
 
+var _ = require("lodash");
+
 var SimpleLogger = require('./logger');
+var UniSocketClient = require('./client');
 
 //----------------------------------------------------------------------------------------------------------------------
 
@@ -89,6 +59,7 @@ function UniSocketChannel(channel, parent)
     this._connectEvents();
     this.waitingCallbacks = {};
     this.pendingMessages = [];
+    this.seqId = 0;
 
     // Create our logger object
     this.logger = new SimpleLogger('channel');
@@ -97,19 +68,15 @@ function UniSocketChannel(channel, parent)
 
 util.inherits(UniSocketChannel, EventEmitter);
 
+// Inherit from our parent
+_.assign(UniSocketChannel.prototype, _.pick(UniSocketClient.prototype,
+    '_handleMessage', '_getSeqId', '_send', 'send', 'request'));
+
 UniSocketChannel.prototype._buildProperties = function()
 {
-    // We want to inherit a lot from our parent, however, we don't want things like connection logic,
-    // connect, close, etc. The safer option is to just bind to our parent's functions for what we need.
-    Object.defineProperties(this, {
-        _handleMessage: { get: function() { return this._parent._handleMessage; } },
-
-        ws: { get: function() { return this._parent.ws; } },
-        state: { get: function() { return this._parent.state; } },
-        _send: { get: function() { return this._parent._send; } },
-        send: { get: function() { return this._parent.send; } },
-        request: { get: function() { return this._parent.request; } }
-    });
+    this.ws = this._parent.ws;
+    this.options = this._parent.options;
+    this.state = this._parent.state;
 }; // end _buildProperties
 
 UniSocketChannel.prototype._connectEvents = function()
@@ -122,7 +89,7 @@ UniSocketChannel.prototype._connectEvents = function()
 module.exports = UniSocketChannel;
 
 //----------------------------------------------------------------------------------------------------------------------
-},{"./logger":4,"events":41,"util":45}],3:[function(require,module,exports){
+},{"./client":3,"./logger":4,"events":42,"lodash":47,"util":46}],3:[function(require,module,exports){
 //----------------------------------------------------------------------------------------------------------------------
 // Brief description for client.js module.
 //
@@ -133,9 +100,8 @@ var util = require("util");
 var EventEmitter = require("events").EventEmitter;
 
 var _ = require('lodash');
-var WebSocket = require('ws');
+var WebSocket = require('./websocket');
 
-var UniSocketChannel = require('./channel');
 var Promise = require('./promise');
 var urlParser = require('./urlparser');
 var SimpleLogger = require('./logger');
@@ -497,6 +463,7 @@ UniSocketClient.prototype.request = function()
 UniSocketClient.prototype.channel = function(channel, callback)
 {
     var self = this;
+    var UniSocketChannel = require('./channel');
     var channelClient = new UniSocketChannel(channel, this);
 
     return new Promise(function(resolve)
@@ -530,7 +497,7 @@ UniSocketClient.prototype.close = function()
 module.exports = UniSocketClient;
 
 //----------------------------------------------------------------------------------------------------------------------
-},{"./channel":2,"./logger":4,"./promise":5,"./urlparser":6,"events":41,"lodash":46,"util":45,"ws":47}],4:[function(require,module,exports){
+},{"./channel":2,"./logger":4,"./promise":5,"./urlparser":6,"./websocket":7,"events":42,"lodash":47,"util":46}],4:[function(require,module,exports){
 //----------------------------------------------------------------------------------------------------------------------
 // A simple logger, with a simple API that works in both the browser, and node.js.
 //
@@ -593,7 +560,7 @@ var Promise = require("bluebird/js/main/promise")();
 module.exports = Promise;
 
 //----------------------------------------------------------------------------------------------------------------------
-},{"bluebird/js/main/promise":25}],6:[function(require,module,exports){
+},{"bluebird/js/main/promise":26}],6:[function(require,module,exports){
 // ---------------------------------------------------------------------------------------------------------------------
 // Takes a url and converts it to a `ws://` or `wss://` url for websocket connection.
 //
@@ -679,6 +646,67 @@ module.exports = {
 
 // ---------------------------------------------------------------------------------------------------------------------
 },{}],7:[function(require,module,exports){
+// ---------------------------------------------------------------------------------------------------------------------
+// Brief Description of websocket.js.
+//
+// @module websocket.js
+// ---------------------------------------------------------------------------------------------------------------------
+
+var util = require('util');
+
+var EventEmitter = require('events').EventEmitter;
+
+// ---------------------------------------------------------------------------------------------------------------------
+
+if(typeof window !== 'undefined')
+{
+    // -----------------------------------------------------------------------------------------------------------------
+
+    function WebSocketWrapper(url, protocols)
+    {
+        EventEmitter.call(this);
+
+        this.ws = new WebSocket(url, protocols);
+        this.ws.onopen = this._wrapEventFunction('open');
+        this.ws.onclose = this._wrapEventFunction('close');
+        this.ws.onerror = this._wrapEventFunction('error');
+        this.ws.onmessage = this._onMessage.bind(this);
+    } // end WebSocketWrapper
+
+    util.inherits(WebSocketWrapper, EventEmitter);
+
+    WebSocketWrapper.prototype._wrapEventFunction = function(eventName)
+    {
+        var self = this;
+        return function(event){ self.emit(eventName, event); }.bind(self);
+    }; // end _wrapEventFunction
+
+    WebSocketWrapper.prototype._onMessage = function(event)
+    {
+        this.emit('message', event.data);
+    }; // end _onMessage
+
+    WebSocketWrapper.prototype.send = function(message)
+    {
+        this.ws.send(message);
+    }; // end send
+
+    WebSocketWrapper.prototype.close = function(code, reason)
+    {
+        this.ws.close(code, reason);
+    }; // end close
+
+    // -----------------------------------------------------------------------------------------------------------------
+
+    module.exports = WebSocketWrapper;
+}
+else
+{
+    module.exports = require('ws');
+} // end if
+
+// ---------------------------------------------------------------------------------------------------------------------
+},{"events":42,"util":46,"ws":48}],8:[function(require,module,exports){
 /**
  * Copyright (c) 2014 Petka Antonov
  * 
@@ -726,7 +754,7 @@ Promise.prototype.any = function Promise$any() {
 
 };
 
-},{}],8:[function(require,module,exports){
+},{}],9:[function(require,module,exports){
 (function (process){
 /**
  * Copyright (c) 2014 Petka Antonov
@@ -841,7 +869,7 @@ Async.prototype._reset = function Async$_reset() {
 module.exports = new Async();
 
 }).call(this,require('_process'))
-},{"./queue.js":30,"./schedule.js":33,"./util.js":40,"_process":43}],9:[function(require,module,exports){
+},{"./queue.js":31,"./schedule.js":34,"./util.js":41,"_process":44}],10:[function(require,module,exports){
 /**
  * Copyright (c) 2014 Petka Antonov
  * 
@@ -959,7 +987,7 @@ Promise.prototype.get = function Promise$get(propertyName) {
 };
 };
 
-},{"./util.js":40}],10:[function(require,module,exports){
+},{"./util.js":41}],11:[function(require,module,exports){
 /**
  * Copyright (c) 2014 Petka Antonov
  * 
@@ -1036,7 +1064,7 @@ function Promise$fork(didFulfill, didReject, didProgress) {
 };
 };
 
-},{"./async.js":8,"./errors.js":15}],11:[function(require,module,exports){
+},{"./async.js":9,"./errors.js":16}],12:[function(require,module,exports){
 /**
  * Copyright (c) 2014 Petka Antonov
  * 
@@ -1255,7 +1283,7 @@ var captureStackTrace = (function stackDetection() {
 return CapturedTrace;
 };
 
-},{"./es5.js":17,"./util.js":40}],12:[function(require,module,exports){
+},{"./es5.js":18,"./util.js":41}],13:[function(require,module,exports){
 /**
  * Copyright (c) 2014 Petka Antonov
  * 
@@ -1351,7 +1379,7 @@ CatchFilter.prototype.doFilter = function CatchFilter$_doFilter(e) {
 return CatchFilter;
 };
 
-},{"./errors.js":15,"./es5.js":17,"./util.js":40}],13:[function(require,module,exports){
+},{"./errors.js":16,"./es5.js":18,"./util.js":41}],14:[function(require,module,exports){
 /**
  * Copyright (c) 2014 Petka Antonov
  * 
@@ -1431,7 +1459,7 @@ function Promise$thenThrow(reason) {
 };
 };
 
-},{"./util.js":40}],14:[function(require,module,exports){
+},{"./util.js":41}],15:[function(require,module,exports){
 /**
  * Copyright (c) 2014 Petka Antonov
  * 
@@ -1467,7 +1495,7 @@ Promise.each = function Promise$Each(promises, fn) {
 };
 };
 
-},{}],15:[function(require,module,exports){
+},{}],16:[function(require,module,exports){
 /**
  * Copyright (c) 2014 Petka Antonov
  * 
@@ -1614,7 +1642,7 @@ module.exports = {
     canAttach: canAttach
 };
 
-},{"./es5.js":17,"./util.js":40}],16:[function(require,module,exports){
+},{"./es5.js":18,"./util.js":41}],17:[function(require,module,exports){
 /**
  * Copyright (c) 2014 Petka Antonov
  * 
@@ -1654,7 +1682,7 @@ function apiRejection(msg) {
 return apiRejection;
 };
 
-},{"./errors.js":15}],17:[function(require,module,exports){
+},{"./errors.js":16}],18:[function(require,module,exports){
 /**
  * Copyright (c) 2014 Petka Antonov
  * 
@@ -1743,7 +1771,7 @@ if (isES5) {
     };
 }
 
-},{}],18:[function(require,module,exports){
+},{}],19:[function(require,module,exports){
 /**
  * Copyright (c) 2014 Petka Antonov
  * 
@@ -1779,7 +1807,7 @@ Promise.filter = function Promise$Filter(promises, fn, options) {
 };
 };
 
-},{}],19:[function(require,module,exports){
+},{}],20:[function(require,module,exports){
 /**
  * Copyright (c) 2014 Petka Antonov
  * 
@@ -1901,7 +1929,7 @@ Promise.prototype.tap = function Promise$tap(handler) {
 };
 };
 
-},{"./util.js":40}],20:[function(require,module,exports){
+},{"./util.js":41}],21:[function(require,module,exports){
 /**
  * Copyright (c) 2014 Petka Antonov
  * 
@@ -2054,7 +2082,7 @@ Promise.spawn = function Promise$Spawn(generatorFunction) {
 };
 };
 
-},{"./errors.js":15,"./util.js":40}],21:[function(require,module,exports){
+},{"./errors.js":16,"./util.js":41}],22:[function(require,module,exports){
 /**
  * Copyright (c) 2014 Petka Antonov
  * 
@@ -2178,7 +2206,7 @@ Promise.join = function Promise$Join() {
 
 };
 
-},{"./util.js":40}],22:[function(require,module,exports){
+},{"./util.js":41}],23:[function(require,module,exports){
 /**
  * Copyright (c) 2014 Petka Antonov
  * 
@@ -2329,7 +2357,7 @@ Promise.map = function Promise$Map(promises, fn, options, _filter) {
 
 };
 
-},{"./util.js":40}],23:[function(require,module,exports){
+},{"./util.js":41}],24:[function(require,module,exports){
 /**
  * Copyright (c) 2014 Petka Antonov
  * 
@@ -2407,7 +2435,7 @@ Promise.prototype.nodeify = function Promise$nodeify(nodeback, options) {
 };
 };
 
-},{"./async.js":8,"./util.js":40}],24:[function(require,module,exports){
+},{"./async.js":9,"./util.js":41}],25:[function(require,module,exports){
 /**
  * Copyright (c) 2014 Petka Antonov
  * 
@@ -2513,7 +2541,7 @@ function Promise$_progressUnchecked(progressValue) {
 };
 };
 
-},{"./async.js":8,"./errors.js":15,"./util.js":40}],25:[function(require,module,exports){
+},{"./async.js":9,"./errors.js":16,"./util.js":41}],26:[function(require,module,exports){
 (function (process){
 /**
  * Copyright (c) 2014 Petka Antonov
@@ -3559,7 +3587,7 @@ return Promise;
 };
 
 }).call(this,require('_process'))
-},{"./any.js":7,"./async.js":8,"./call_get.js":9,"./cancel.js":10,"./captured_trace.js":11,"./catch_filter.js":12,"./direct_resolve.js":13,"./each.js":14,"./errors.js":15,"./errors_api_rejection":16,"./filter.js":18,"./finally.js":19,"./generators.js":20,"./join.js":21,"./map.js":22,"./nodeify.js":23,"./progress.js":24,"./promise_array.js":26,"./promise_resolver.js":27,"./promisify.js":28,"./props.js":29,"./race.js":31,"./reduce.js":32,"./settle.js":34,"./some.js":35,"./synchronous_inspection.js":36,"./thenables.js":37,"./timers.js":38,"./using.js":39,"./util.js":40,"_process":43}],26:[function(require,module,exports){
+},{"./any.js":8,"./async.js":9,"./call_get.js":10,"./cancel.js":11,"./captured_trace.js":12,"./catch_filter.js":13,"./direct_resolve.js":14,"./each.js":15,"./errors.js":16,"./errors_api_rejection":17,"./filter.js":19,"./finally.js":20,"./generators.js":21,"./join.js":22,"./map.js":23,"./nodeify.js":24,"./progress.js":25,"./promise_array.js":27,"./promise_resolver.js":28,"./promisify.js":29,"./props.js":30,"./race.js":32,"./reduce.js":33,"./settle.js":35,"./some.js":36,"./synchronous_inspection.js":37,"./thenables.js":38,"./timers.js":39,"./using.js":40,"./util.js":41,"_process":44}],27:[function(require,module,exports){
 /**
  * Copyright (c) 2014 Petka Antonov
  * 
@@ -3763,7 +3791,7 @@ function PromiseArray$getActualLength(len) {
 return PromiseArray;
 };
 
-},{"./errors.js":15,"./util.js":40}],27:[function(require,module,exports){
+},{"./errors.js":16,"./util.js":41}],28:[function(require,module,exports){
 /**
  * Copyright (c) 2014 Petka Antonov
  * 
@@ -3923,7 +3951,7 @@ function PromiseResolver$_setCarriedStackTrace(trace) {
 
 module.exports = PromiseResolver;
 
-},{"./async.js":8,"./errors.js":15,"./es5.js":17,"./util.js":40}],28:[function(require,module,exports){
+},{"./async.js":9,"./errors.js":16,"./es5.js":18,"./util.js":41}],29:[function(require,module,exports){
 /**
  * Copyright (c) 2014 Petka Antonov
  * 
@@ -4251,7 +4279,7 @@ Promise.promisifyAll = function Promise$PromisifyAll(target, options) {
 };
 
 
-},{"./errors":15,"./promise_resolver.js":27,"./util.js":40}],29:[function(require,module,exports){
+},{"./errors":16,"./promise_resolver.js":28,"./util.js":41}],30:[function(require,module,exports){
 /**
  * Copyright (c) 2014 Petka Antonov
  * 
@@ -4361,7 +4389,7 @@ Promise.props = function Promise$Props(promises) {
 };
 };
 
-},{"./errors_api_rejection":16,"./es5.js":17,"./util.js":40}],30:[function(require,module,exports){
+},{"./errors_api_rejection":17,"./es5.js":18,"./util.js":41}],31:[function(require,module,exports){
 /**
  * Copyright (c) 2014 Petka Antonov
  * 
@@ -4478,7 +4506,7 @@ Queue.prototype._resizeTo = function Queue$_resizeTo(capacity) {
 
 module.exports = Queue;
 
-},{}],31:[function(require,module,exports){
+},{}],32:[function(require,module,exports){
 /**
  * Copyright (c) 2014 Petka Antonov
  * 
@@ -4552,7 +4580,7 @@ Promise.prototype.race = function Promise$race() {
 
 };
 
-},{"./errors_api_rejection.js":16,"./util.js":40}],32:[function(require,module,exports){
+},{"./errors_api_rejection.js":17,"./util.js":41}],33:[function(require,module,exports){
 /**
  * Copyright (c) 2014 Petka Antonov
  * 
@@ -4712,7 +4740,7 @@ Promise.reduce = function Promise$Reduce(promises, fn, initialValue, _each) {
 };
 };
 
-},{"./util.js":40}],33:[function(require,module,exports){
+},{"./util.js":41}],34:[function(require,module,exports){
 (function (process){
 /**
  * Copyright (c) 2014 Petka Antonov
@@ -4777,7 +4805,7 @@ else throw new Error("no async scheduler available");
 module.exports = schedule;
 
 }).call(this,require('_process'))
-},{"_process":43}],34:[function(require,module,exports){
+},{"_process":44}],35:[function(require,module,exports){
 /**
  * Copyright (c) 2014 Petka Antonov
  * 
@@ -4846,7 +4874,7 @@ Promise.prototype.settle = function Promise$settle() {
 };
 };
 
-},{"./util.js":40}],35:[function(require,module,exports){
+},{"./util.js":41}],36:[function(require,module,exports){
 /**
  * Copyright (c) 2014 Petka Antonov
  * 
@@ -4999,7 +5027,7 @@ Promise.prototype.some = function Promise$some(howMany) {
 Promise._SomePromiseArray = SomePromiseArray;
 };
 
-},{"./errors.js":15,"./util.js":40}],36:[function(require,module,exports){
+},{"./errors.js":16,"./util.js":41}],37:[function(require,module,exports){
 /**
  * Copyright (c) 2014 Petka Antonov
  * 
@@ -5077,7 +5105,7 @@ Promise.prototype.isResolved = function Promise$isResolved() {
 Promise.PromiseInspection = PromiseInspection;
 };
 
-},{}],37:[function(require,module,exports){
+},{}],38:[function(require,module,exports){
 /**
  * Copyright (c) 2014 Petka Antonov
  * 
@@ -5212,7 +5240,7 @@ function Promise$_doThenable(x, then, originalPromise) {
 return Promise$_Cast;
 };
 
-},{"./errors.js":15,"./util.js":40}],38:[function(require,module,exports){
+},{"./errors.js":16,"./util.js":41}],39:[function(require,module,exports){
 /**
  * Copyright (c) 2014 Petka Antonov
  * 
@@ -5305,7 +5333,7 @@ Promise.prototype.timeout = function Promise$timeout(ms, message) {
 
 };
 
-},{"./errors.js":15,"./errors_api_rejection":16,"./util.js":40}],39:[function(require,module,exports){
+},{"./errors.js":16,"./errors_api_rejection":17,"./util.js":41}],40:[function(require,module,exports){
 /**
  * Copyright (c) 2014 Petka Antonov
  * 
@@ -5481,7 +5509,7 @@ module.exports = function (Promise, apiRejection, cast) {
 
 };
 
-},{"./errors.js":15,"./util.js":40}],40:[function(require,module,exports){
+},{"./errors.js":16,"./util.js":41}],41:[function(require,module,exports){
 /**
  * Copyright (c) 2014 Petka Antonov
  * 
@@ -5751,7 +5779,7 @@ var ret = {
 
 module.exports = ret;
 
-},{"./es5.js":17}],41:[function(require,module,exports){
+},{"./es5.js":18}],42:[function(require,module,exports){
 // Copyright Joyent, Inc. and other Node contributors.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a
@@ -6054,7 +6082,7 @@ function isUndefined(arg) {
   return arg === void 0;
 }
 
-},{}],42:[function(require,module,exports){
+},{}],43:[function(require,module,exports){
 if (typeof Object.create === 'function') {
   // implementation from standard node.js 'util' module
   module.exports = function inherits(ctor, superCtor) {
@@ -6079,7 +6107,7 @@ if (typeof Object.create === 'function') {
   }
 }
 
-},{}],43:[function(require,module,exports){
+},{}],44:[function(require,module,exports){
 // shim for using process in browser
 
 var process = module.exports = {};
@@ -6144,14 +6172,14 @@ process.chdir = function (dir) {
     throw new Error('process.chdir is not supported');
 };
 
-},{}],44:[function(require,module,exports){
+},{}],45:[function(require,module,exports){
 module.exports = function isBuffer(arg) {
   return arg && typeof arg === 'object'
     && typeof arg.copy === 'function'
     && typeof arg.fill === 'function'
     && typeof arg.readUInt8 === 'function';
 }
-},{}],45:[function(require,module,exports){
+},{}],46:[function(require,module,exports){
 (function (process,global){
 // Copyright Joyent, Inc. and other Node contributors.
 //
@@ -6741,7 +6769,7 @@ function hasOwnProperty(obj, prop) {
 }
 
 }).call(this,require('_process'),typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {})
-},{"./support/isBuffer":44,"_process":43,"inherits":42}],46:[function(require,module,exports){
+},{"./support/isBuffer":45,"_process":44,"inherits":43}],47:[function(require,module,exports){
 (function (global){
 /**
  * @license
@@ -13530,7 +13558,7 @@ function hasOwnProperty(obj, prop) {
 }.call(this));
 
 }).call(this,typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {})
-},{}],47:[function(require,module,exports){
+},{}],48:[function(require,module,exports){
 
 /**
  * Module dependencies.
@@ -13575,4 +13603,4 @@ function ws(uri, protocols, opts) {
 
 if (WebSocket) ws.prototype = WebSocket.prototype;
 
-},{}]},{},[1]);
+},{}]},{},[1,2,3,4,5,6,7]);
