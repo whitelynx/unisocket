@@ -371,6 +371,30 @@ describe('UniSocketClient', function()
                 });
             });
         });
+        it('sends requests on the correct channel', function(done)
+        {
+            client.connect().then(function()
+            {
+                client.ws.on('send', function(message)
+                {
+                    var msgObj = JSON.parse(message);
+                    if(msgObj.channel == '$control')
+                    {
+                        client.ws.emit('message', "{\"name\":\"channel\",\"channel\":\"$control\",\"replyTo\":\"2\",\"data\":[]}")
+                    }
+                    else
+                    {
+                        assert.equal(message, "{\"name\":\"test\",\"replyWith\":\"1\",\"channel\":\"test\",\"data\":[]}");
+                        done()
+                    } // end if
+                });
+
+                client.channel('test').then(function(channel)
+                {
+                    channel.request('test');
+                });
+            });
+        });
 
         it('fires events when messages come in on the channel', function(done)
         {
