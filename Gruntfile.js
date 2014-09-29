@@ -9,7 +9,7 @@ module.exports = function(grunt)
         browserify: {
             devel: {
                 files: {
-                    'dist/unisocket.js': ['index.js']
+                    'dist/unisocket.js': ['index.js', 'lib/**/*.js']
                 }
             }
         },
