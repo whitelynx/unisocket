@@ -20,7 +20,7 @@ Technically, there's no reason you can't. In fact, that's how UniSocket works un
 the boiler-plate code for using WebSockets, handles creating the JSON message for you, and gives you namespaces and
 replies.
 
-Additionally, the WebSocket api is mildly obtuse, while the observer patter, or promise pattern is much nicer to work
+Additionally, the WebSocket api is mildly obtuse, while the observer pattern, or promise pattern is much nicer to work
 with. If you want an additional carrot, then consider this: one of the first post-beta features we plan to add is binary
 WebSocket support, with [MessagePack](http://msgpack.org/) instead of JSON messages. This should decrease message size,
 and increase speed.
@@ -49,57 +49,190 @@ recommend_ you use it. For most webprojects, this is as easy as:
 
 ### Connecting
 
-Connecting to a server is straight forward, if you've ever used Socket.io:
+We support connecting to the following style of urls:
+
+* `""` - Empty string; means we connect to the current hostname/port; if we're http, we use `ws://`, if we're https, we use `wss://`.
+* `"ws://localhost:8000"` - WS/WSS protocol; means we use the string directly.
+* `"localhost:8000"` - No protocol; mean we use that hostname/port; if we're http, we use `ws://`, if we're https, we use `wss://`.
+* `"http://localhost:8000"` - HTTP/HTTPS protocol; we replace that: if it's http, we use `ws://`, if it's https, we use `wss://`.
 
 ```javascript
-// You don't need to pass any arguments; it defaults to 'localhost:80'.
+// Simple connection, connects to this host/port
 var socket = unisocket.connect();
 
-// You can pass a normal url.
-var socket = unisocket.connect("http://ws.example.com");
+// Simple connection, connected callback
+var socket = unisocket.connect(function(error)
+{
+    // handle error/do stuff
+});
 
-// You can omit the protocol.
-var socket = unisocket.connect("ws.example.com");
-
-// You can include port in any form of the url examples.
-var socket = unisocket.connect("ws.example.com:1337");
-
-// You can include a channel as well
-var socket = unisocket.connect("ws.example.com:1337/news");
+// Simple connection, promise based
+var socket;
+unisocket.connect().then(function(_socket)
+{
+    socket = _socket;
+    // do stuff
+}).error(function(error)
+{
+    // handle error
+});
 ```
 
-## Listening for messages
+#### Events
+
+UniSocket supports the following events on the main connection object:
+
+* `connected` - Fired only once, the first time we connect to the server.
+* `disconnected` - Fired when our websocket connection is lost; use `closed` if you want to know when we've stopped trying to reconnect and consider the connection dead.
+* `reconnected` - Fired when we've successfully reestablished connection.
+* `closed` - Fired once the socket is disconnected, and we are no longer attempting to reconnect. (This will either be because of a timeout, or because the user called `close()`.)
+* `timeout` - Fired once we have disconnected, and reached our timeout before successfully reconnecting.
+
+Here are some examples:
+
+```javascript
+socket.on('connected', function()
+{
+    console.log('Weee! Connected!');
+});
+
+socket.on('disconnected', function()
+{
+    console.log('Boo! Disconnected.');
+});
+
+socket.on('reconnected', function()
+{
+    console.log('Weee! Connected AGAIN!');
+});
+
+socket.on('closed', function()
+{
+    console.log('Boo! The socket closed.');
+});
+
+socket.on('timeout', function()
+{
+    console.log('Boo! We timed out reconnecting.');
+});
+```
+
+#### Handling reconnection
+
+By default, it will always attempt to reconnect. The reconnection logic follows this algorithm based on how long we've 
+been disconnected:
+
+| Time disconnected | Action                                |
+|:-----------------:|---------------------------------------|
+|      <= 30s       | Attempts to immediately reconnect.    |
+|      <= 2m        | Attempts to connect every 15 seconds. |
+|      <= 5m        | Attempts to connect every 30 seconds. |
+|      <= Infinity  | Attempts to connect every 60 seconds. |
+
+It will _always_ attempt to reconnect, unless instructed to give up by the application. This can be done by calling the 
+`close()` function. (If `close()` is called and there's an open connection, we close the connection and do not attempt 
+to reconnect.)
+
+It also supports a timeout, by default infinity, but it can be set. If we timeout before reconnecting, then we fire a
+`timeout` event, and automatically close the socket, as if `close()` had been called.
+
+When we successfully reconnect, the `reconnected` event. (Note: We only fire the `connected` event once after 
+`connect()` has been called; everything else is always a `reconnected` event. This behavior resets after calling 
+`close()`.)
+
+#### Sending messages while reconnecting
+
+We hold on to messages that are sent using `send()` or `request()` while we're still attempting to reconnect. If 
+`close()` is called or the `timeout` event fires, we then purge any stored messages.
+
+### Connecting to a channel
+
+UniSocket supports namespacing messages. These namespaces are called 'channels'. (Socket.io has a very similar feature.)
+If you want to use channels, both the client and server side will need to listen on the same channel. To setup message
+handlers on a particular channel, you would do the following:
+
+```javascript
+// Callback
+socket.channel('foobar', function(channel)
+{
+    // Work with the channel here.
+});
+
+// Promise style
+socket.channel('foobar').then(function(channel)
+{
+    // Work with the channel here.
+});
+```
+
+### Listening for messages
 
 Once you've connected, you will want to listen for incoming messages, and respond to them. If you've ever used Socket.io
 before, this should look familiar:
 
 ```javascript
-socket.on('connected', function()
+socket.on('test', function(data)
 {
-    socket.on('test', function(data)
-    {
-        console.log('got data:', data);
-    });
+    console.log('got data:', data);
 });
 ```
 
-A couple of points to mention, however. First, you must listen for the `connected` event _before attempting to send
-messages_. If you do not, there is a chance the websocket hasn't finished connecting. Attempts to send will cause an
-error (but not a fatal one).
+_Note: There is no Promise-based API for handling incoming messages. This is because we simply couldn't find any way of 
+doing it that made sense, or leveraged Promises in a meaningful way. As a compromise, we allow you to reply to incoming 
+messages in a Promise-style way._
 
-_Note_: You do not need to wait for the `connected` event before registering your callbacks, _unlike_ the node.js
-server.
+#### Replies
 
-Event callbacks will be passed any additional arguments the message was sent with. (If a reply is desired, the last
-argument will always be a callback. See "Replies" for more information.)
+Incoming messages may, or may not expect a reply. If they do, the last argument send will be a callback. You can either 
+call it with your response, or you can simply return from the function.
+
+```javascript
+
+// Handle an incoming message, callback style
+socket.on('message name', function(args, callback)
+{
+    console.log('handling the message.');
+    
+    if(callback)
+    {
+        callback(null, 'reply message here (can be any JSON-able type)');
+    } // end if
+});
+
+// Handle an incoming message, promise style
+socket.on('message name', function(args, expectsReply)
+{
+    console.log('handling the message.');
+    
+    if(expectsReply)
+    {
+        return 'reply message here (can be any JSON-able type, or a Promise of a JSON-able type)';
+    } // end if
+});
+```
+
+This allows you to use UniSocket as a sort of remote Promise API, if you so choose.
 
 ### Sending messages
 
-Sending messages is as simple as emitting an event in node. (We've intentionally use the same API as `EventEmitter`
-since this is a common pattern for node.js developers.)
+We have two ways to send messages, `send()` and `request()`. The only difference between them is that `request()` 
+expects a response.
 
 ```javascript
-client.emit('test', "Some additional data.");
+// Send a message
+socket.send('message name', args1, args2, ...);
+
+// Callback style
+socket.request('message name', args1, args2, function(error, reply)
+{
+    console.log('reply:', reply);
+});
+
+// Promise style
+socket.request('message name', args1, args2, ...).then(function(reply)
+{
+    console.log('reply:', reply);
+});
 ```
 
 You can pass as many arguments as you want, and they will be passed to the client's message handler callback.
@@ -107,81 +240,15 @@ You can pass as many arguments as you want, and they will be passed to the clien
 ### Complete (Basic) Example
 
 ```javascript
-var socket = unisocket.connect("localhost:4000");
-socket.on('connected', function()
-{
-    socket.emit('test', "Some data.");
-});
-
+var socket = unisocket.connect("localhost:4000")
+    .then(function()
+    {
+        socket.send('test', "Some data.");
+    };
+    
 socket.on('echo', function(msg)
 {
     console.log('got:', msg);
-});
-```
-
-## Features
-
-In addition to the basic usage, UniSocket supports some very useful features.
-
-### Using Channels
-
-UniSocket supports namespacing messages. These namespaces are called 'channels'. (Socket.io has a very similar feature.)
-If you want to use channels, both the client and server side will need to listen on the same channel. To setup message
-handlers on a particular channel, you would do the following:
-
-```javascript
-var socket = unisocket.connect("/chat");
-socket.on('echo', function(msg)
-{
-    console.log('got:', msg);
-});
-```
-
-You call `unisocket.connect()` with any valid slug url for the channel name, and it will return you a `UniSocketClient`
-object that is namespaced to that channel. All message handlers registered with `on()` will only fire for messages on
-that channel.
-
-You may also use a full url (ex: `http://ws.example.com:8080/news`) to connect; the host will be ignored if you've already connected to a websocket, otherwise
-it will connect to that host first, then connect to the channel.
-
-_Note_: The `connected` event _only_ fires when the websocket has connected. This means you will not get a `connected`
-event for connecting to a channel, unless you have not connected to the underlying websocket.
-
-### Using Replies
-
-Frequently, it's useful to be able to reply to an incoming message (or get a reply back from the server). UniSocket
-makes this as easy as possible, and unlike Socket.io, replies are bi-directional. The client can send a message, and the
-server can reply, or the server can send a message, and the client reply. The API is intentionally identical on both
-sides.
-
-_Note_: Replies have a configurable timeout, however, that timeout cannot be infinite. If a reply is expected, the other
-side should always respond.
-
-#### Expecting a reply
-
-If your message expects a reply, the final argument to `emit` must be a callback. This callback function will be called
-when the reply comes in, with any arguments included in the reply.
-
-```javascript
-socket.emit('expects reply', "some data", function(replyData)
-{
-    console.log('responseData:', responseData);
-});
-```
-
-#### Replying to a message
-
-Replying to a message is also very straightforward. When a message comes in to the client that expects a reply, the
-UniSocket client builds a callback for you, and appends that to the list of arguments your message handler function gets
-passed. This means the last argument is _always_ the callback.
-
-To reply, simply call the callback, with whatever data you wish to send back.
-
-```javascript
-socket.on('echo', function(msg, callback)
-{
-    // Echo msg back to the client.
-    callback(msg);
 });
 ```
 
@@ -197,20 +264,26 @@ fragments to describe the message; making it easier to understand what the messa
 
 ```javascript
 // Here's a single word message
-socket.emit('edit');
+socket.send('edit');
 
 // Here's a message with underscores
-socket.emit('edit_blog');
+socket.send('edit_blog');
 
 // Here's a sentence fragment, with spaces
-socket.emit('edit blog post');
+socket.send('edit blog post');
 ```
 
 Personally, I find the last example the most readable, and encourage people to use UniSocket like that.
 
-_Note_: There is one small caveat: some server implementations (like Erlang) might require a bit of syntactic sugar to
-support message names with spaces. However, the specification states that any valid unicode character is supported in a
-message name, so all compliant servers must have a way of handling this. It's just useful to keep this in mind.
+## Building
+
+Since this is a browserify project, there _is_ a build step. Simply run the following command:
+
+```bash
+$ grunt build
+```
+
+That will output a `unisocket.min.js` file in the `dist` folder.
 
 ## Tests
 
@@ -233,9 +306,3 @@ do not fit the project's goals. (Things like long-polling support, bindings to p
 ### License
 
 All code is licensed under the MIT license.
-
-### A note on dependencies
-
-The UniSocket client library is dependency free, and our intention is to keep it that way. We know (and love) many
-Javascript frameworks, like underscore.js, lodash.js, jquery, etc, however, we want the client library to be easy to use
-and self-contained. If a library becomes necessary, it will be bundled (in a `noConflict` manner) with the client code.

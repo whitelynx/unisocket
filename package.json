@@ -4,7 +4,7 @@
   "description": "A real-time communication library built around websockets, and an easy to implement protocol.",
   "main": "src/unisocket.js",
   "scripts": {
-    "test": "./node_modules/karma/bin/karma start --single-run"
+    "test": "./node_modules/.bin/mocha tests/ -R spec"
   },
   "repository": {
     "type": "git",
@@ -21,15 +21,14 @@
     "url": "https://github.com/Morgul/unisocket/issues"
   },
   "devDependencies": {
-    "grunt": "~0.4.4",
-    "karma": "~0.12.12",
-    "mocha": "~1.18.2",
-    "karma-mocha": "~0.1.3",
-    "karma-chai": "~0.1.0",
-    "sinon": "~1.9.1",
-    "karma-sinon": "~1.0.3",
-    "karma-mocha-reporter": "~0.2.3",
-    "karma-chrome-launcher": "~0.1.3",
-    "karma-firefox-launcher": "~0.1.3"
+    "grunt": "^0.4.5",
+    "grunt-browserify": "^3.0.1",
+    "grunt-contrib-watch": "^0.6.1",
+    "mocha": "^1.18.2"
+  },
+  "dependencies": {
+    "bluebird": "^2.1.3",
+    "lodash": "^2.4.1",
+    "ws": "^0.4.31"
   }
 }
