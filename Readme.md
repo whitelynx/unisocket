@@ -186,8 +186,7 @@ messages in a Promise-style way._
 Incoming messages may, or may not expect a reply. If they do, the last argument send will be a callback. You can either 
 call it with your response, or you can simply return from the function.
 
-```
-javascript
+```javascript
 
 // Handle an incoming message, callback style
 socket.on('message name', function(args, callback)
