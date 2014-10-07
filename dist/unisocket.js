@@ -15,7 +15,7 @@ var UniSocketClient = require('./lib/client');
 module.exports = {
     connect: function(url, options)
     {
-        var client = new UniSocketClient(options)
+        var client = new UniSocketClient(options);
         var clientPromise =  client.connect(url);
         return _.assign(clientPromise, _.bindAll(client));
     },
@@ -227,7 +227,7 @@ UniSocketClient.prototype._handleMessage = function(message)
     message.data = message.data || [];
 
     // Handle the multiple names for the root channel
-    if((message.channel == '/') || (message.channel == ''))
+    if((message.channel == '/') || (message.channel === ''))
     {
         message.channel = undefined;
     } // end if
@@ -449,8 +449,16 @@ UniSocketClient.prototype.request = function()
             // fix arguments array
             var args = Array.prototype.slice.call(arguments);
 
-            // Resolve the promise
-            resolve(args);
+            if(args[0])
+            {
+                // An error was passed; reject the promise.
+                reject(args[0]);
+            }
+            else
+            {
+                // Resolve the promise.
+                resolve(args.slice(1));
+            } // end if
         };
     }).nodeify(callback, { spread: true });
 
@@ -497,6 +505,7 @@ UniSocketClient.prototype.close = function()
 module.exports = UniSocketClient;
 
 //----------------------------------------------------------------------------------------------------------------------
+
 },{"./channel":2,"./logger":4,"./promise":5,"./urlparser":6,"./websocket":7,"events":42,"lodash":47,"util":46}],4:[function(require,module,exports){
 //----------------------------------------------------------------------------------------------------------------------
 // A simple logger, with a simple API that works in both the browser, and node.js.
@@ -596,12 +605,12 @@ function getLocation()
     if(typeof window !== 'undefined')
     {
         // Get this from the browser
-        return { host: window.location.hostname, port: window.location.port }
+        return { host: window.location.hostname, port: window.location.port };
     }
     else
     {
         // We're in node, so guess at the port
-        return { host: 'localhost', port: isSecure() ? 443 : 80 }
+        return { host: 'localhost', port: isSecure() ? 443 : 80 };
     } // end if
 } // end getLocation()
 
@@ -645,6 +654,7 @@ module.exports = {
 }; // end exports
 
 // ---------------------------------------------------------------------------------------------------------------------
+
 },{}],7:[function(require,module,exports){
 // ---------------------------------------------------------------------------------------------------------------------
 // Brief Description of websocket.js.
@@ -660,6 +670,9 @@ var EventEmitter = require('events').EventEmitter;
 
 if(typeof window !== 'undefined')
 {
+    // Disable jshint warning about declaring functions inside blocks:
+    //jshint -W082
+
     // -----------------------------------------------------------------------------------------------------------------
 
     function WebSocketWrapper(url, protocols)
@@ -706,6 +719,7 @@ else
 } // end if
 
 // ---------------------------------------------------------------------------------------------------------------------
+
 },{"events":42,"util":46,"ws":48}],8:[function(require,module,exports){
 /**
  * Copyright (c) 2014 Petka Antonov
@@ -894,9 +908,12 @@ module.exports = new Async();
  */
 "use strict";
 var cr = Object.create;
-var callerCache = cr && cr(null);
-var getterCache = cr && cr(null);
-callerCache[" size"] = getterCache[" size"] = 0;
+if (cr) {
+    var callerCache = cr(null);
+    var getterCache = cr(null);
+    callerCache[" size"] = getterCache[" size"] = 0;
+}
+
 module.exports = function(Promise) {
 var util = require("./util.js");
 var canEvaluate = util.canEvaluate;
@@ -1186,7 +1203,7 @@ CapturedTrace.combine = function CapturedTrace$Combine(current, prev) {
 
     for (var i = 0, len = lines.length; i < len; ++i) {
 
-        if ((rignore.test(lines[i]) ||
+        if (((rignore.test(lines[i]) && rtraceline.test(lines[i])) ||
             (i > 0 && !rtraceline.test(lines[i])) &&
             lines[i] !== "From previous event:")
        ) {
@@ -1195,6 +1212,22 @@ CapturedTrace.combine = function CapturedTrace$Combine(current, prev) {
         ret.push(lines[i]);
     }
     return ret;
+};
+
+CapturedTrace.protectErrorMessageNewlines = function(stack) {
+    for (var i = 0; i < stack.length; ++i) {
+        if (rtraceline.test(stack[i])) {
+            break;
+        }
+    }
+
+    if (i <= 1) return;
+
+    var errorMessageLines = [];
+    for (var j = 0; j < i; ++j) {
+        errorMessageLines.push(stack.shift());
+    }
+    stack.unshift(errorMessageLines.join("\u0002\u0000\u0001"));
 };
 
 CapturedTrace.isSupported = function CapturedTrace$IsSupported() {
@@ -2476,6 +2509,14 @@ Promise.prototype._progress = function Promise$_progress(progressValue) {
 
 };
 
+Promise.prototype._clearFirstHandlerData$Base =
+Promise.prototype._clearFirstHandlerData;
+Promise.prototype._clearFirstHandlerData =
+function Promise$_clearFirstHandlerData() {
+    this._clearFirstHandlerData$Base();
+    this._progressHandler0 = void 0;
+};
+
 Promise.prototype._progressHandlerAt =
 function Promise$_progressHandlerAt(index) {
     return index === 0
@@ -2627,11 +2668,24 @@ function Promise(resolver) {
     if (resolver !== INTERNAL) this._resolveFromResolver(resolver);
 }
 
+function returnFirstElement(elements) {
+    return elements[0];
+}
+
 Promise.prototype.bind = function Promise$bind(thisArg) {
+    var maybePromise = cast(thisArg, void 0);
     var ret = new Promise(INTERNAL);
-    ret._follow(this);
+    if (maybePromise instanceof Promise) {
+        var binder = maybePromise.then(function(thisArg) {
+            ret._setBoundTo(thisArg);
+        });
+        var p = Promise.all([this, binder]).then(returnFirstElement);
+        ret._follow(p);
+    } else {
+        ret._follow(this);
+        ret._setBoundTo(thisArg);
+    }
     ret._propagateFrom(this, 2 | 1);
-    ret._setBoundTo(thisArg);
     return ret;
 };
 
@@ -2656,8 +2710,7 @@ function Promise$catch(fn) {
                         + "or a filter function");
 
                 this._attachExtraTrace(catchFilterTypeError);
-                async.invoke(this._reject, this, catchFilterTypeError);
-                return;
+                return Promise.reject(catchFilterTypeError);
             }
         }
         catchInstances.length = j;
@@ -2790,10 +2843,19 @@ Promise.defer = Promise.pending = function Promise$Defer() {
 };
 
 Promise.bind = function Promise$Bind(thisArg) {
+    var maybePromise = cast(thisArg, void 0);
     var ret = new Promise(INTERNAL);
     ret._setTrace(void 0);
-    ret._setFulfilled();
-    ret._setBoundTo(thisArg);
+
+    if (maybePromise instanceof Promise) {
+        var p = maybePromise.then(function(thisArg) {
+            ret._setBoundTo(thisArg);
+        });
+        ret._follow(p);
+    } else {
+        ret._setBoundTo(thisArg);
+        ret._setFulfilled();
+    }
     return ret;
 };
 
@@ -3093,7 +3155,7 @@ function Promise$_proxyPromiseArray(promiseArray, index) {
 
 Promise.prototype._proxyPromise = function Promise$_proxyPromise(promise) {
     promise._setProxied();
-    this._setProxyHandlers(promise, -1);
+    this._setProxyHandlers(promise, -15);
 };
 
 Promise.prototype._setBoundTo = function Promise$_setBoundTo(obj) {
@@ -3273,8 +3335,8 @@ function Promise$_attachExtraTrace(error) {
     if (debugging) {
         var promise = this;
         var stack = error.stack;
-        stack = typeof stack === "string"
-            ? stack.split("\n") : [];
+        stack = typeof stack === "string" ? stack.split("\n") : [];
+        CapturedTrace.protectErrorMessageNewlines(stack);
         var headerLineCount = 1;
         var combinedTraces = 1;
         while(promise != null &&
@@ -3290,9 +3352,13 @@ function Promise$_attachExtraTrace(error) {
         var stackTraceLimit = Error.stackTraceLimit || 10;
         var max = (stackTraceLimit + headerLineCount) * combinedTraces;
         var len = stack.length;
-        if (len  > max) {
+        if (len > max) {
             stack.length = max;
         }
+
+        if (len > 0)
+            stack[0] = stack[0].split("\u0002\u0000\u0001").join("\n");
+
         if (stack.length <= headerLineCount) {
             error.stack = "(No stack trace)";
         } else {
@@ -3368,7 +3434,7 @@ Promise.prototype._settlePromiseAt = function Promise$_settlePromiseAt(index) {
         }
     }
 
-    if (index >= 256) {
+    if (index >= 4) {
         this._queueGC();
     }
 };
@@ -3404,12 +3470,21 @@ Promise.prototype._queueGC = function Promise$_queueGC() {
 };
 
 Promise.prototype._gc = function Promise$gc() {
-    var len = this._length() * 5;
+    var len = this._length() * 5 - 5;
     for (var i = 0; i < len; i++) {
         delete this[i];
     }
+    this._clearFirstHandlerData();
     this._setLength(0);
     this._unsetGcQueued();
+};
+
+Promise.prototype._clearFirstHandlerData =
+function Promise$_clearFirstHandlerData() {
+    this._fulfillmentHandler0 = void 0;
+    this._rejectionHandler0 = void 0;
+    this._promise0 = void 0;
+    this._receiver0 = void 0;
 };
 
 Promise.prototype._queueSettleAt = function Promise$_queueSettleAt(index) {
@@ -4092,26 +4167,26 @@ function makeNodePromisifiedEval(callback, receiver, originalName, fn, suffix) {
         var ret;
         if (typeof callback === "string") {
             ret = "                                                          \n\
-                this.method(args, fn);                                       \n\
+                this.method({{args}}, fn);                                   \n\
                 break;                                                       \n\
             ".replace(".method", generatePropertyAccess(callback));
         } else if (receiver === THIS) {
             ret =  "                                                         \n\
-                callback.call(this, args, fn);                               \n\
+                callback.call(this, {{args}}, fn);                           \n\
                 break;                                                       \n\
             ";
         } else if (receiver !== void 0) {
             ret =  "                                                         \n\
-                callback.call(receiver, args, fn);                           \n\
+                callback.call(receiver, {{args}}, fn);                       \n\
                 break;                                                       \n\
             ";
         } else {
             ret =  "                                                         \n\
-                callback(args, fn);                                          \n\
+                callback({{args}}, fn);                                      \n\
                 break;                                                       \n\
             ";
         }
-        return ret.replace("args", args).replace(", ", comma);
+        return ret.replace("{{args}}", args).replace(", ", comma);
     }
 
     function generateArgumentSwitchCase() {
@@ -4609,30 +4684,31 @@ var util = require("./util.js");
 var tryCatch4 = util.tryCatch4;
 var tryCatch3 = util.tryCatch3;
 var errorObj = util.errorObj;
-var PENDING = {};
 function ReductionPromiseArray(promises, fn, accum, _each) {
     this.constructor$(promises);
-    var currentIndex = -2;
     this._preservedValues = _each === INTERNAL ? [] : null;
+    this._zerothIsAccum = (accum === void 0);
+    this._gotAccum = false;
+    this._reducingIndex = (this._zerothIsAccum ? 1 : 0);
+    this._valuesPhase = undefined;
+
     var maybePromise = cast(accum, void 0);
     var rejected = false;
     var isPromise = maybePromise instanceof Promise;
     if (isPromise) {
         if (maybePromise.isPending()) {
-            currentIndex = -1;
             maybePromise._proxyPromiseArray(this, -1);
         } else if (maybePromise.isFulfilled()) {
             accum = maybePromise.value();
-            currentIndex = 0;
+            this._gotAccum = true;
         } else {
             maybePromise._unsetRejectionIsUnhandled();
             this._reject(maybePromise.reason());
             rejected = true;
         }
     }
-    if (!isPromise && accum !== void 0) currentIndex = 0;
+    if (!(isPromise || this._zerothIsAccum)) this._gotAccum = true;
     this._callback = fn;
-    this._currentIndex = currentIndex;
     this._accum = accum;
     if (!rejected) this._init$(void 0, -5);
 }
@@ -4643,7 +4719,7 @@ function ReductionPromiseArray$_init() {};
 
 ReductionPromiseArray.prototype._resolveEmptyArray =
 function ReductionPromiseArray$_resolveEmptyArray() {
-    if (this._currentIndex !== -1) {
+    if (this._gotAccum || this._zerothIsAccum) {
         this._resolve(this._preservedValues !== null
                         ? [] : this._accum);
     }
@@ -4651,44 +4727,64 @@ function ReductionPromiseArray$_resolveEmptyArray() {
 
 ReductionPromiseArray.prototype._promiseFulfilled =
 function ReductionPromiseArray$_promiseFulfilled(value, index) {
-    var accum;
     var values = this._values;
     if (values === null) return;
     var length = this.length();
-    var currentIndex = this._currentIndex;
-    if (currentIndex > index) return;
     var preservedValues = this._preservedValues;
     var isEach = preservedValues !== null;
-    if (index === 0 && currentIndex === -2) {
-        accum = value;
-        currentIndex = 1;
-        if (length < 2) return this._resolve(void 0);
-        value = values[1];
-    } else if (index > currentIndex) {
-        return;
-    } else if (index === -1 || values[index] === PENDING) {
-        accum = value;
-        currentIndex++;
-        if (currentIndex >= length)
-            return this._resolve(isEach ? preservedValues : accum);
-        value = values[currentIndex];
-    } else {
-        accum = this._accum;
+    var gotAccum = this._gotAccum;
+    var valuesPhase = this._valuesPhase;
+    var valuesPhaseIndex;
+    if (!valuesPhase) {
+        valuesPhase = this._valuesPhase = Array(length);
+        for (valuesPhaseIndex=0; valuesPhaseIndex<length; ++valuesPhaseIndex) {
+            valuesPhase[valuesPhaseIndex] = 0;
+        }
     }
+    valuesPhaseIndex = valuesPhase[index];
+
+    if (index === 0 && this._zerothIsAccum) {
+        if (!gotAccum) {
+            this._accum = value;
+            this._gotAccum = gotAccum = true;
+        }
+        valuesPhase[index] = ((valuesPhaseIndex === 0)
+            ? 1 : 2);
+    } else if (index === -1) {
+        if (!gotAccum) {
+            this._accum = value;
+            this._gotAccum = gotAccum = true;
+        }
+    } else {
+        if (valuesPhaseIndex === 0) {
+            valuesPhase[index] = 1;
+        }
+        else {
+            valuesPhase[index] = 2;
+            if (gotAccum) {
+                this._accum = value;
+            }
+        }
+    }
+    if (!gotAccum) return;
 
     var callback = this._callback;
     var receiver = this._promise._boundTo;
     var ret;
 
-    for (var i = currentIndex; i < length; ++i) {
-        if (i > currentIndex) value = values[i];
+    for (var i = this._reducingIndex; i < length; ++i) {
+        valuesPhaseIndex = valuesPhase[i];
+        if (valuesPhaseIndex === 2) {
+            this._reducingIndex = i + 1;
+            continue;
+        }
+        if (valuesPhaseIndex !== 1) return;
 
+        value = values[i];
         if (value instanceof Promise) {
             if (value.isFulfilled()) {
                 value = value._settledValue;
             } else if (value.isPending()) {
-                this._accum = accum;
-                this._currentIndex = i;
                 return;
             } else {
                 value._unsetRejectionIsUnhandled();
@@ -4701,7 +4797,7 @@ function ReductionPromiseArray$_promiseFulfilled(value, index) {
             ret = tryCatch3(callback, receiver, value, i, length);
         }
         else {
-            ret = tryCatch4(callback, receiver, accum, value, i, length);
+            ret = tryCatch4(callback, receiver, this._accum, value, i, length);
         }
 
         if (ret === errorObj) return this._reject(ret.e);
@@ -4709,9 +4805,7 @@ function ReductionPromiseArray$_promiseFulfilled(value, index) {
         var maybePromise = cast(ret, void 0);
         if (maybePromise instanceof Promise) {
             if (maybePromise.isPending()) {
-                values[i] = PENDING;
-                this._accum = accum;
-                this._currentIndex = i;
+                valuesPhase[i] = 4;
                 return maybePromise._proxyPromiseArray(this, i);
             } else if (maybePromise.isFulfilled()) {
                 ret = maybePromise.value();
@@ -4720,9 +4814,13 @@ function ReductionPromiseArray$_promiseFulfilled(value, index) {
                 return this._reject(maybePromise.reason());
             }
         }
-        accum = ret;
+
+        this._reducingIndex = i + 1;
+        this._accum = ret;
     }
-    this._resolve(isEach ? preservedValues : accum);
+
+    if (this._reducingIndex < length) return;
+    this._resolve(isEach ? preservedValues : this._accum);
 };
 
 function reduce(promises, fn, initialValue, _each) {
@@ -4791,7 +4889,7 @@ else if ((typeof MutationObserver !== "undefined" &&
         });
         return function Promise$_Scheduler(fn) {
             queuedFn = fn;
-            div.setAttribute("class", "foo");
+            div.classList.toggle("foo");
         };
 
     })();
@@ -4922,14 +5020,12 @@ SomePromiseArray.prototype._init = function SomePromiseArray$_init() {
         this._resolve([]);
         return;
     }
-    this._init$(void 0, -2);
+    this._init$(void 0, -5);
     var isArrayResolved = isArray(this._values);
     if (!this._isResolved() &&
         isArrayResolved &&
         this._howMany > this._canPossiblyFulfill()) {
-        var message = "(Promise.some) input array contains less than " +
-                        this._howMany  + " promises";
-        this._reject(new RangeError(message));
+        this._reject(this._getRangeError(this.length()));
     }
 };
 
@@ -5000,6 +5096,18 @@ function SomePromiseArray$_addFulfilled(value) {
 SomePromiseArray.prototype._canPossiblyFulfill =
 function SomePromiseArray$_canPossiblyFulfill() {
     return this.length() - this._rejected();
+};
+
+SomePromiseArray.prototype._getRangeError =
+function SomePromiseArray$_getRangeError(count) {
+    var message = "Input array must contain at least " +
+            this._howMany + " items but contains only " + count + " items";
+    return new RangeError(message);
+};
+
+SomePromiseArray.prototype._resolveEmptyArray =
+function SomePromiseArray$_resolveEmptyArray() {
+    this._reject(this._getRangeError(0));
 };
 
 function Promise$_Some(promises, howMany) {
@@ -5271,7 +5379,7 @@ var _setTimeout = function(fn, ms) {
     var arg2 = len >= 5 ? arguments[4] : void 0;
     setTimeout(function() {
         fn(arg0, arg1, arg2);
-    }, ms);
+    }, ms|0);
 };
 
 module.exports = function(Promise, INTERNAL, cast) {
@@ -5378,13 +5486,23 @@ module.exports = function (Promise, apiRejection, cast) {
         setTimeout(function(){throw e;}, 0);
     }
 
+    function castPreservingDisposable(thenable) {
+        var maybePromise = cast(thenable, void 0);
+        if (maybePromise !== thenable &&
+            typeof thenable._isDisposable === "function" &&
+            typeof thenable._getDisposer === "function" &&
+            thenable._isDisposable()) {
+            maybePromise._setDisposable(thenable._getDisposer());
+        }
+        return maybePromise;
+    }
     function dispose(resources, inspection) {
         var i = 0;
         var len = resources.length;
         var ret = Promise.defer();
         function iterator() {
             if (i >= len) return ret.resolve();
-            var maybePromise = cast(resources[i++], void 0);
+            var maybePromise = castPreservingDisposable(resources[i++]);
             if (maybePromise instanceof Promise &&
                 maybePromise._isDisposable()) {
                 try {
@@ -5447,6 +5565,12 @@ module.exports = function (Promise, apiRejection, cast) {
         return ret;
     };
 
+    Disposer.isDisposer = function Disposer$isDisposer(d) {
+        return (d != null &&
+                typeof d.resource === "function" &&
+                typeof d.tryDispose === "function");
+    };
+
     function FunctionDisposer(fn, promise) {
         this.constructor$(fn, promise);
     }
@@ -5467,7 +5591,7 @@ module.exports = function (Promise, apiRejection, cast) {
         var resources = new Array(len);
         for (var i = 0; i < len; ++i) {
             var resource = arguments[i];
-            if (resource instanceof Disposer) {
+            if (Disposer.isDisposer(resource)) {
                 var disposer = resource;
                 resource = resource.promise();
                 resource._setDisposable(disposer);
