@@ -52,7 +52,7 @@ function FakeSocket(options)
     });
 } // end FakeSocketServer
 util.inherits(FakeSocket, EventEmitter);
-FakeSocket.prototype.send = function(data){this.emit('send', data); };
+FakeSocket.prototype.send = function(data){ this.emit('send', data); };
 FakeSocket.prototype.close = function(){ this.emit('close'); };
 
 // ---------------------------------------------------------------------------------------------------------------------
@@ -169,7 +169,7 @@ describe('UniSocketClient', function()
                     client.ws.on('send', function(message)
                     {
                         assert.equal(message, "{\"name\":\"test\",\"data\":[]}");
-                        done()
+                        done();
                     });
                 });
 
@@ -214,7 +214,7 @@ describe('UniSocketClient', function()
                 client.ws.on('send', function(message)
                 {
                     assert.equal(message, "{\"name\":\"test\",\"data\":[]}");
-                    done()
+                    done();
                 });
 
                 client.send('test');
@@ -228,7 +228,7 @@ describe('UniSocketClient', function()
                 client.ws.on('send', function(message)
                 {
                     assert.equal(message, "{\"name\":\"test\",\"data\":[{\"foo\":true},[{\"bar\":false}]]}");
-                    done()
+                    done();
                 });
 
                 client.send('test', {foo: true}, [{bar: false}]);
@@ -241,7 +241,7 @@ describe('UniSocketClient', function()
             {
                 client.on('test', function()
                 {
-                    done()
+                    done();
                 });
 
                 client.ws.emit('message', "{\"name\":\"test\",\"data\":[]}");
@@ -256,7 +256,7 @@ describe('UniSocketClient', function()
                 {
                     assert.deepEqual(arg1, { foo: true });
                     assert.deepEqual(arg2, [{ bar: false }]);
-                    done()
+                    done();
                 });
 
                 client.ws.emit('message', "{\"name\":\"test\",\"data\":[{\"foo\":true},[{\"bar\":false}]]}");
@@ -273,7 +273,7 @@ describe('UniSocketClient', function()
                 client.ws.on('send', function(message)
                 {
                     assert.deepEqual(JSON.parse(message), { name:"test", replyWith:"2", data:[] });
-                    done()
+                    done();
                 });
 
                 client.request('test');
@@ -323,7 +323,7 @@ describe('UniSocketClient', function()
 
             client.on('timeout', function()
             {
-                done()
+                done();
             });
 
             client.connect().then(function()
@@ -356,12 +356,12 @@ describe('UniSocketClient', function()
                     var msgObj = JSON.parse(message);
                     if(msgObj.channel == '$control')
                     {
-                        client.ws.emit('message', "{\"name\":\"channel\",\"channel\":\"$control\",\"replyTo\":\"2\",\"data\":[]}")
+                        client.ws.emit('message', "{\"name\":\"channel\",\"channel\":\"$control\",\"replyTo\":\"2\",\"data\":[]}");
                     }
                     else
                     {
                         assert.equal(message, "{\"name\":\"test\",\"channel\":\"test\",\"data\":[]}");
-                        done()
+                        done();
                     } // end if
                 });
 
@@ -380,12 +380,12 @@ describe('UniSocketClient', function()
                     var msgObj = JSON.parse(message);
                     if(msgObj.channel == '$control')
                     {
-                        client.ws.emit('message', "{\"name\":\"channel\",\"channel\":\"$control\",\"replyTo\":\"2\",\"data\":[]}")
+                        client.ws.emit('message', "{\"name\":\"channel\",\"channel\":\"$control\",\"replyTo\":\"2\",\"data\":[]}");
                     }
                     else
                     {
                         assert.equal(message, "{\"name\":\"test\",\"replyWith\":\"1\",\"channel\":\"test\",\"data\":[]}");
-                        done()
+                        done();
                     } // end if
                 });
 
@@ -405,7 +405,7 @@ describe('UniSocketClient', function()
                     var msgObj = JSON.parse(message);
                     if(msgObj.channel == '$control')
                     {
-                        client.ws.emit('message', "{\"name\":\"channel\",\"channel\":\"$control\",\"replyTo\":\"2\",\"data\":[]}")
+                        client.ws.emit('message', "{\"name\":\"channel\",\"channel\":\"$control\",\"replyTo\":\"2\",\"data\":[]}");
                     } // end if
                 });
 
@@ -413,7 +413,7 @@ describe('UniSocketClient', function()
                 {
                     channel.on('test', function()
                     {
-                        done()
+                        done();
                     });
 
                     channel.ws.emit('message', "{\"name\":\"test\",\"channel\":\"test\",\"data\":[]}");
