@@ -215,7 +215,11 @@ UniSocketClient.prototype._handleDisconnect = function()
 
         setTimeout(function()
         {
-            self.connect(url);
+            self.connect(url)
+                .catch(function()
+                {
+                    // Ignore errors, since we'll get the 'disconnected' event again.
+                });
         }, delayMS);
     }
     else
@@ -383,6 +387,7 @@ UniSocketClient.prototype.connect = function(url)
                 {
                     self.logger.error("Connection timed out.");
                     reject(new Error("Connection timed out."));
+                    self.ws.removeListener('error', reject);
 
                     self.emit('timeout');
                 } // end if
