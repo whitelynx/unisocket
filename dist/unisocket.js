@@ -191,31 +191,32 @@ UniSocketClient.prototype._handleDisconnect = function()
         this.disconnectMS = this.disconnectMS || Date.now();
         var diff = (Date.now() - this.disconnectMS) / 1000;
 
-        if(diff <= 30)
+        var delayMS;
+        if(diff <= 1)
         {
-            this.connect(url);
+            delayMS = 10;
+        }
+        else if(diff <= 30)
+        {
+            delayMS = 1000;
         }
         else if(diff <= 120)
         {
-            setTimeout(function()
-            {
-                self.connect(url);
-            }, 15000);
+            delayMS = 15000;
         }
         else if(diff <= 300)
         {
-            setTimeout(function()
-            {
-                self.connect(url);
-            }, 30000);
+            delayMS = 30000;
         }
         else
         {
-            setTimeout(function()
-            {
-                self.connect(url);
-            }, 60000);
+            delayMS = 60000;
         } // end if
+
+        setTimeout(function()
+        {
+            self.connect(url);
+        }, delayMS);
     }
     else
     {
