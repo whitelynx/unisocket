@@ -142,13 +142,20 @@ util.inherits(UniSocketClient, EventEmitter);
 // Internal API
 //----------------------------------------------------------------------------------------------------------------------
 
+UniSocketClient.closeReasons = {
+    CLOSE_NORMAL: { code: 1000, reason: 'default close reason.' },
+    disconnected: { code: 4000, reason: 'disconnected.' },
+    connecting: { code: 4001, reason: 'connecting.' },
+    closing: { code: 4002, reason: 'closing.' }
+};
+
 UniSocketClient.prototype._getSeqId = function()
 {
     this.seqId++;
     return this.seqId.toString();
 }; // end _getSeqId
 
-UniSocketClient.prototype._cleanup = function()
+UniSocketClient.prototype._cleanup = function(reason)
 {
     if(this.ws)
     {
@@ -158,8 +165,10 @@ UniSocketClient.prototype._cleanup = function()
         this.waitingCallbacks = {};
         this.pendingMessages = [];
 
-        // Cleanup our websocket instance
-        this.ws.close();
+        // Cleanup our websocket instance.
+        // Always send a code and reason to `ws.close()`, to avoid "InvalidAccessError" errors in Chrome.
+        reason = reason || UniSocketClient.closeReasons.CLOSE_NORMAL;
+        this.ws.close(reason.code, reason.reason);
 
         // Give the close event a chance to propagate
         setImmediate(this.ws.removeAllListeners.bind(this.ws));
@@ -176,7 +185,7 @@ UniSocketClient.prototype._handleDisconnect = function()
     {
         var url = this.url;
         this.state = 'reconnecting';
-        this._cleanup();
+        this._cleanup(UniSocketClient.closeReasons.disconnected);
 
         // Only set this if it's not set
         this.disconnectMS = this.disconnectMS || Date.now();
@@ -294,7 +303,7 @@ UniSocketClient.prototype.connect = function(url)
     else
     {
         // Ensure we have a clean state.
-        this._cleanup();
+        this._cleanup(UniSocketClient.closeReasons.connecting);
         if(this.state != 'reconnecting')
         {
             this.state = 'connecting';
@@ -494,7 +503,7 @@ UniSocketClient.prototype.close = function()
     {
         // Stop any attempts to reconnect; and cleanup.
         this.reconnect = false;
-        this._cleanup();
+        this._cleanup(UniSocketClient.closeReasons.closing);
 
         this.emit('closed');
     } // end if
