@@ -304,7 +304,7 @@ describe('UniSocketClient', function()
                 client.ws.on('send', function(message)
                 {
                     assert.deepEqual(JSON.parse(message), { name:"test", replyWith:"2", data:[] });
-                    client.ws.emit('message', "{\"name\":\"test\",\"replyTo\":\"2\",\"data\":[{\"foo\":true},[{\"bar\":false}]]}");
+                    client.ws.emit('message', "{\"name\":\"test\",\"replyTo\":\"2\",\"data\":[null, {\"foo\":true},[{\"bar\":false}]]}");
                 });
 
                 client.request('test').spread(function(arg1, arg2)
