@@ -213,7 +213,12 @@ UniSocketClient.prototype._handleDisconnect = function()
             delayMS = 60000;
         } // end if
 
-        setTimeout(function()
+        if(this.reconnectTimeoutHandle)
+        {
+            clearTimeout(this.reconnectTimeoutHandle);
+        } // end if
+
+        this.reconnectTimeoutHandle = setTimeout(function()
         {
             self.connect(url)
                 .catch(function()
@@ -296,6 +301,12 @@ UniSocketClient.prototype.connect = function(url)
 {
     var self = this;
 
+    if(this.reconnectTimeoutHandle)
+    {
+        clearTimeout(this.reconnectTimeoutHandle);
+        delete this.reconnectTimeoutHandle;
+    } // end if
+
     if(this.state != 'closed' && this.url != url)
     {
         this.close();
@@ -334,11 +345,26 @@ UniSocketClient.prototype.connect = function(url)
         this.connectPromise = new Promise(function(resolve, reject)
         {
             // If we get an error before we've connected, reject the promise
-            self.ws.once('error', reject);
+            self.ws.once('error', function(error)
+            {
+                if(self.connectTimeoutHandle)
+                {
+                    clearTimeout(self.connectTimeoutHandle);
+                    delete self.connectTimeoutHandle;
+                } // end if
+
+                reject(error);
+            });
 
             // Register websocket events
             self.ws.once('open', function()
             {
+                if(self.connectTimeoutHandle)
+                {
+                    clearTimeout(self.connectTimeoutHandle);
+                    delete self.connectTimeoutHandle;
+                } // end if
+
                 // Remove our 'on connection' error handler
                 self.ws.removeListener('error', reject);
 
@@ -381,7 +407,7 @@ UniSocketClient.prototype.connect = function(url)
             self.ws.once('close', self._handleDisconnect.bind(self));
 
             // Setup a connect timeout
-            setTimeout(function()
+            self.connectTimeoutHandle = setTimeout(function()
             {
                 if(self.connectPromise.isPending())
                 {
